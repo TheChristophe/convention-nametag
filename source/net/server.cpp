@@ -174,6 +174,13 @@ void WebServer::run(VideoPlayer &player)
             res->writeHeader("Access-Control-Allow-Origin", "*");
             res->end();
         })
+        .options("/*", [](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
+            res->writeStatus(ResponseCodes::HTTP_204_NO_CONTENT);
+            res->writeHeader("Access-Control-Allow-Origin", "*");
+            res->writeHeader("Access-Control-Allow-Methods", "*");
+            // res->writeHeader("Allow", "OPTIONS, GET, HEAD, POST");
+            res->end();
+        })
         .listen(_port, [this](auto *token) {
             this->_socket = token;
             if (token) {
