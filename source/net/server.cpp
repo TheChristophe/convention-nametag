@@ -23,9 +23,24 @@ std::optional<std::string> AttemptLoadFile(const std::filesystem::path &file)
     return str;
 }
 
+std::string UrlDecode(std::string encoded)
+{
+    for (size_t i = 0; i < encoded.size() - 2; i++) {
+        if (encoded[i] == '%' && (i + 2) < encoded.size()) {
+            char hex[3]     = { encoded[i + 1], encoded[i + 2], '\0' };
+            char decoded[2] = { static_cast<char>(std::strtol(hex, nullptr, 16)), '\0' };
+            encoded.replace(i, 3, decoded);
+        }
+    }
+
+    return encoded;
+}
+
 namespace ResponseCodes {
-    const auto HTTP_200_OK        = uWS::HTTP_200_OK;
-    const auto HTTP_404_NOT_FOUND = "404 Not Found";
+    const auto HTTP_200_OK         = uWS::HTTP_200_OK;
+    const auto HTTP_204_NO_CONTENT = "204 No Content";
+    const auto HTTP_404_NOT_FOUND  = "404 Not Found";
+    const auto HTTP_409_CONFLICT   = "409 Conflict";
 } // namespace ResponseCodes
 
 const auto RESPONSE_404 = "<!doctype html>\n"
@@ -80,11 +95,43 @@ void WebServer::run(VideoPlayer &player)
             serveFile(res, req);
         })
         // upload
-        .post("/videos", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
-            res->writeStatus(ResponseCodes::HTTP_200_OK);
-            res->writeHeader("content-type", "application/json");
-            res->writeHeader("Access-Control-Allow-Origin", "*");
-            res->end("TODO");
+        .post("/videos/:video", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
+            auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
+            auto path       = videoFolder / std::filesystem::path(urlDecoded).filename();
+
+            // use C files because idk how to do binary with ofstream
+            if (exists(path)) {
+                std::cerr << "File collision, upload for " << path << " refused" << std::endl;
+                res->writeStatus(ResponseCodes::HTTP_409_CONFLICT);
+                res->writeHeader("Access-Control-Allow-Origin", "*");
+                res->end();
+                return;
+            }
+
+            FILE *out = fopen(path.c_str(), "wb");
+
+            res->onData([&out, &res](std::string_view chunk, auto isLast) {
+                /* Buffer this anywhere you want to */
+                fwrite(chunk.data(), chunk.size(), 1, out);
+
+                if (isLast) {
+                    fclose(out);
+                    res->writeStatus(ResponseCodes::HTTP_204_NO_CONTENT);
+                    res->writeHeader("Access-Control-Allow-Origin", "*");
+                    res->end();
+                }
+            });
+
+            res->onAborted([&out, &path, &res]() {
+                /* Request was prematurely aborted, stop reading */
+                fclose(out);
+                remove(path.c_str());
+                std::cerr << "Upload for " << path << " aborted" << std::endl;
+                res->writeStatus(ResponseCodes::HTTP_409_CONFLICT);
+                res->writeHeader("Access-Control-Allow-Origin", "*");
+                res->end();
+                return;
+            });
         })
         // get list of videos
         .get("/videos", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
@@ -102,20 +149,21 @@ void WebServer::run(VideoPlayer &player)
         })
         // delete specific video
         .del("/videos/*", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
-            auto path = videoFolder / std::filesystem::path(req->getUrl()).filename();
+            auto urlDecoded = UrlDecode(std::string(req->getUrl()));
+            auto path       = videoFolder / std::filesystem::path(urlDecoded).filename();
             std::filesystem::remove(path);
 
-            res->writeStatus(ResponseCodes::HTTP_200_OK);
-            res->writeHeader("content-type", "application/json");
+            res->writeStatus(ResponseCodes::HTTP_204_NO_CONTENT);
             res->writeHeader("Access-Control-Allow-Origin", "*");
-            res->end("");
+            res->end();
         })
         // play specific video
         .post("/videos/*:play", [this, &player](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
-            auto url = req->getUrl();
+            auto urlDecoded = UrlDecode(std::string(req->getUrl()));
             // trim ":play"
-            auto path = videoFolder / std::filesystem::path(url.substr(0, url.size() - 5)).filename();
+            auto path = videoFolder / std::filesystem::path(urlDecoded.substr(0, urlDecoded.size() - 5)).filename();
             if (not player.PlayFile(path)) {
+                std::cerr << "Could not find file " << path << std::endl;
                 res->writeStatus(ResponseCodes::HTTP_404_NOT_FOUND);
                 res->writeHeader("content-type", "text/html");
                 res->writeHeader("Access-Control-Allow-Origin", "*");
@@ -123,10 +171,9 @@ void WebServer::run(VideoPlayer &player)
                 return;
             }
 
-            res->writeStatus(ResponseCodes::HTTP_200_OK);
-            res->writeHeader("content-type", "application/json");
+            res->writeStatus(ResponseCodes::HTTP_204_NO_CONTENT);
             res->writeHeader("Access-Control-Allow-Origin", "*");
-            res->end("");
+            res->end();
         })
         .listen(_port, [this](auto *token) {
             this->_socket = token;
