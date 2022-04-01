@@ -49,10 +49,12 @@ void serveFile(uWS::HttpResponse<SSL> *res, uWS::HttpRequest *req)
     auto file = AttemptLoadFile(url);
     if (not file.has_value()) {
         res->writeStatus(ResponseCodes::HTTP_404_NOT_FOUND);
+        res->writeHeader("Access-Control-Allow-Origin", "*");
         res->end(RESPONSE_404);
     }
     else {
         res->writeStatus(ResponseCodes::HTTP_200_OK);
+        res->writeHeader("Access-Control-Allow-Origin", "*");
         res->end(file.value());
     }
 }
@@ -81,6 +83,7 @@ void WebServer::run(VideoPlayer &player)
         .post("/videos", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
             res->writeStatus(ResponseCodes::HTTP_200_OK);
             res->writeHeader("content-type", "application/json");
+            res->writeHeader("Access-Control-Allow-Origin", "*");
             res->end("TODO");
         })
         // get list of videos
@@ -94,6 +97,7 @@ void WebServer::run(VideoPlayer &player)
 
             res->writeStatus(ResponseCodes::HTTP_200_OK);
             res->writeHeader("content-type", "application/json");
+            res->writeHeader("Access-Control-Allow-Origin", "*");
             res->end(json.dump());
         })
         // delete specific video
@@ -101,8 +105,9 @@ void WebServer::run(VideoPlayer &player)
             auto path = videoFolder / std::filesystem::path(req->getUrl()).filename();
             std::filesystem::remove(path);
 
-            res->writeHeader("content-type", "application/json");
             res->writeStatus(ResponseCodes::HTTP_200_OK);
+            res->writeHeader("content-type", "application/json");
+            res->writeHeader("Access-Control-Allow-Origin", "*");
             res->end("");
         })
         // play specific video
@@ -111,14 +116,16 @@ void WebServer::run(VideoPlayer &player)
             // trim ":play"
             auto path = videoFolder / std::filesystem::path(url.substr(0, url.size() - 5)).filename();
             if (not player.PlayFile(path)) {
-                res->writeHeader("content-type", "text/html");
                 res->writeStatus(ResponseCodes::HTTP_404_NOT_FOUND);
+                res->writeHeader("content-type", "text/html");
+                res->writeHeader("Access-Control-Allow-Origin", "*");
                 res->end(RESPONSE_404);
                 return;
             }
 
-            res->writeHeader("content-type", "application/json");
             res->writeStatus(ResponseCodes::HTTP_200_OK);
+            res->writeHeader("content-type", "application/json");
+            res->writeHeader("Access-Control-Allow-Origin", "*");
             res->end("");
         })
         .listen(_port, [this](auto *token) {
