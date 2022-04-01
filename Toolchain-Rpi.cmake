@@ -5,8 +5,8 @@ set(CMAKE_SYSTEM_PROCESSOR arm)
 
 # specify the cross compiler
 set(toolchain armv6-rpi-linux-gnueabihf)
-SET(CMAKE_SYSROOT /home/chris/x-tools/${toolchain}/${toolchain}/sysroot/)
-set(tools /home/chris/x-tools/${toolchain})
+SET(CMAKE_SYSROOT /home/christophe/x-tools/${toolchain}/${toolchain}/sysroot/)
+set(tools /home/christophe/x-tools/${toolchain})
 SET(CMAKE_C_COMPILER ${tools}/bin/${toolchain}-gcc)
 SET(CMAKE_CXX_COMPILER ${tools}/bin/${toolchain}-g++)
 

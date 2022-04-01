@@ -1,6 +1,6 @@
 Loose instructions to set up cross-compilation
 
-0. Required packages: Arch: `base-devel`, `help2man`, `rsync`
+0. Required packages: Arch: `base-devel`, `help2man`, `rsync`, `unzip`
 
 1. `git clone https://github.com/crosstool-ng/crosstool-ng`, `cd crosstool-ng`
 2. Generate ./configure: `./bootstrap`

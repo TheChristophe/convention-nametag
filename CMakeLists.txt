@@ -19,7 +19,7 @@ include_directories(source/wrappers)
 
 set(CMAKE_CXX_FLAGS "-pipe -Winvalid-pch -fexceptions -Wno-psabi -pthread")
 set(CMAKE_CXX_FLAGS_DEBUG "-Og -ggdb -Wall -Wextra -Wformat -Wfloat-equal -Wshadow -Wpointer-arith -Wcast-qual  -Wno-unused-parameter -Wfatal-errors -DDEBUGGING -Wsuggest-final-types -Wpedantic -Wnull-dereference -fno-omit-frame-pointer -fdiagnostics-color -ftemplate-depth=128 -fconstexpr-depth=128 -ftemplate-backtrace-limit=8 -Wreorder -Wold-style-cast -Woverloaded-virtual")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=arm1176jzf-s -mfpu=vfp -mfloat-abi=hard")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=armv6 -mtune=arm1176jzf-s -mfpu=vfp -mfloat-abi=hard")
 
 set(SOURCE_FILES
         source/net/server.cpp
@@ -70,5 +70,4 @@ find_library(SWSCALE_LIBRARY swscale)
 
 
 target_include_directories(nametag PUBLIC ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR} ${AVDEVICE_INCLUDE_DIR} ${SWRESAMPLE_INCLUDE_DIR} ${SWSCALE_INCLUDE_DIR})
-target_link_libraries(nametag PUBLIC ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} ${AVDEVICE_LIBRARY} ${SWRESAMPLE_LIBRARY} ${SWSCALE_LIBRARY})
-
+target_link_libraries(nametag PUBLIC ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} ${AVDEVICE_LIBRARY} ${SWRESAMPLE_LIBRARY} ${SWSCALE_LIBRARY} -static-libgcc -static-libstdc++ -static)
