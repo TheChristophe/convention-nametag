@@ -94,6 +94,20 @@ void WebServer::run(VideoPlayer &player)
         .get("/*", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
             serveFile(res, req);
         })
+        // get list of videos
+        .get("/videos", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
+            auto files = listFiles();
+            std::vector<nlohmann::json> fileNames;
+            std::transform(files.begin(), files.end(), std::back_inserter(fileNames), [](const std::filesystem::path &path) -> nlohmann::json {
+                return { { "filename", std::string(path.filename()) } };
+            });
+            auto json = nlohmann::json({ { "videos", fileNames } });
+
+            res->writeStatus(ResponseCodes::HTTP_200_OK);
+            res->writeHeader("content-type", "application/json");
+            res->writeHeader("Access-Control-Allow-Origin", "*");
+            res->end(json.dump());
+        })
         // upload
         .post("/videos/:video", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
             auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
@@ -133,23 +147,9 @@ void WebServer::run(VideoPlayer &player)
                 return;
             });
         })
-        // get list of videos
-        .get("/videos", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
-            auto files = listFiles();
-            std::vector<nlohmann::json> fileNames;
-            std::transform(files.begin(), files.end(), std::back_inserter(fileNames), [](const std::filesystem::path &path) -> nlohmann::json {
-                return { { "filename", std::string(path.filename()) } };
-            });
-            auto json = nlohmann::json({ { "videos", fileNames } });
-
-            res->writeStatus(ResponseCodes::HTTP_200_OK);
-            res->writeHeader("content-type", "application/json");
-            res->writeHeader("Access-Control-Allow-Origin", "*");
-            res->end(json.dump());
-        })
         // delete specific video
-        .del("/videos/*", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
-            auto urlDecoded = UrlDecode(std::string(req->getUrl()));
+        .del("/videos/:file", [this](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
+            auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
             auto path       = videoFolder / std::filesystem::path(urlDecoded).filename();
             std::filesystem::remove(path);
 
@@ -158,10 +158,9 @@ void WebServer::run(VideoPlayer &player)
             res->end();
         })
         // play specific video
-        .post("/videos/*:play", [this, &player](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
-            auto urlDecoded = UrlDecode(std::string(req->getUrl()));
-            // trim ":play"
-            auto path = videoFolder / std::filesystem::path(urlDecoded.substr(0, urlDecoded.size() - 5)).filename();
+        .post("/videos/:file/play", [this, &player](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
+            auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
+            auto path = videoFolder / std::filesystem::path(urlDecoded).filename();
             if (not player.PlayFile(path)) {
                 std::cerr << "Could not find file " << path << std::endl;
                 res->writeStatus(ResponseCodes::HTTP_404_NOT_FOUND);
