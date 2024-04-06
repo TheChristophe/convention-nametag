@@ -113,6 +113,10 @@ void WebServer::run(VideoPlayer &player)
             auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
             auto path       = videoFolder / std::filesystem::path(urlDecoded).filename();
 
+            if (!std::filesystem::exists(videoFolder)) {
+                std::filesystem::create_directory(videoFolder);
+            }
+
             // use C files because idk how to do binary with ofstream
             if (exists(path)) {
                 std::cerr << "File collision, upload for " << path << " refused" << std::endl;
