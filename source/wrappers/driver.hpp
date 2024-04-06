@@ -5,6 +5,7 @@
 
 #include <algorithm> // std::max
 #include <cstring>
+#include <stdexcept>
 
 /**
  * @brief SH1106
