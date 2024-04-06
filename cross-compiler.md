@@ -1,3 +1,6 @@
+> ## NOTICE: these steps are for pi zero, outdated for pi zero 2
+> I suggest using the docker image instead
+
 Loose instructions to set up cross-compilation
 
 0. Required packages: Arch: `base-devel`, `help2man`, `rsync`, `unzip`
