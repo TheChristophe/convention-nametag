@@ -10,17 +10,17 @@
 #include <string>
 
 class WebServer {
-    public:
+  public:
     explicit WebServer() = default;
-    ~WebServer()         = default;
+    ~WebServer() = default;
 
     void run(VideoPlayer &player);
     void halt();
 
-    private:
+  private:
     us_listen_socket_t *_socket{};
 
-    short _port{ 8080 };
+    short _port{8080};
 };
 
 #endif

@@ -4,10 +4,10 @@
 #include "decoder.hpp"
 
 class IdleDecoder : public Decoder {
-    public:
+  public:
     ~IdleDecoder() override = default;
 
     void DecodeFrame(uint8_t *buffer, int bufferSize) override;
 };
 
-#endif //CONVENTION_NAMETAG_IDLEDECODER_HPP
+#endif // CONVENTION_NAMETAG_IDLEDECODER_HPP

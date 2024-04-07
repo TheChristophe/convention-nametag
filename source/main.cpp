@@ -7,10 +7,9 @@
 #include <csignal>
 #include <video/videoPlayer.hpp>
 
-static bool run{ true };
+static bool run{true};
 
-void signalHandler(int dummy)
-{
+void signalHandler(int dummy) {
     if (not run) {
         std::exit(-1);
     }
@@ -18,8 +17,7 @@ void signalHandler(int dummy)
     printf("Quitting\n");
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
@@ -33,19 +31,17 @@ int main(int argc, char **argv)
     // AnimationController animation(driver.GetWidth(), driver.GetHeight());
 
     auto current = std::chrono::steady_clock::now();
-    auto prev    = std::chrono::steady_clock::now();
+    auto prev = std::chrono::steady_clock::now();
 
     long long int totalFrameTimes{};
 
     decltype(current) sectionTimes[4];
-    long long int sectionDeltas[3]{ 0, 0, 0 };
+    long long int sectionDeltas[3]{0, 0, 0};
 
     VideoPlayer player(HardwareSpecs::SSD1322::Width, HardwareSpecs::SSD1322::Height);
 
     WebServer server;
-    std::thread serverThread([&server, &player]() {
-        server.run(player);
-    });
+    std::thread serverThread([&server, &player]() { server.run(player); });
 
     while (run) {
         // animation.ProcessRequests();
@@ -73,7 +69,8 @@ int main(int argc, char **argv)
 
         totalFrameTimes += std::chrono::duration_cast<std::chrono::milliseconds>(current - prev).count();
         for (int i = 0; i < 3; i++) {
-            auto timeDifference{ std::chrono::duration_cast<std::chrono::microseconds>(sectionTimes[i + 1] - sectionTimes[i]).count() };
+            auto timeDifference{
+                std::chrono::duration_cast<std::chrono::microseconds>(sectionTimes[i + 1] - sectionTimes[i]).count()};
             sectionDeltas[i] += timeDifference;
         }
         frameCount++;

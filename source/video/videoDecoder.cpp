@@ -6,9 +6,7 @@
 #include <thread>
 
 VideoDecoder::VideoDecoder(const std::filesystem::path &file, int width, int height)
-    : _outWidth{ width }
-    , _outHeight{ height }
-{
+    : _formatContext{avformat_alloc_context()}, _outWidth{width}, _outHeight{height} {
     auto filename = std::string(file);
     if (avformat_open_input(&_formatContext, filename.c_str(), nullptr, nullptr) != 0) {
         throw std::runtime_error("failed to open video file!");
@@ -18,9 +16,10 @@ VideoDecoder::VideoDecoder(const std::filesystem::path &file, int width, int hei
 
     for (int i = 0; i < static_cast<int>(_formatContext->nb_streams); i++) {
         if (_formatContext->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            _videoStream     = _formatContext->streams[i];
-            _streamIndex     = i;
+            _videoStream = _formatContext->streams[i];
+            _streamIndex = i;
             _codecParameters = _videoStream->codecpar;
+            break;
         }
     }
     if (_codecParameters == nullptr) {
@@ -52,24 +51,23 @@ VideoDecoder::VideoDecoder(const std::filesystem::path &file, int width, int hei
     avformat_find_stream_info(_formatContext, nullptr);
 
     _swsContext = sws_getContext(_codecParameters->width, _codecParameters->height,
-        static_cast<AVPixelFormat>(_codecParameters->format), _outWidth, _outHeight, AV_PIX_FMT_RGB24,
-        SWS_BILINEAR, nullptr, nullptr, nullptr);
+        static_cast<AVPixelFormat>(_codecParameters->format), _outWidth, _outHeight, AV_PIX_FMT_RGB24, SWS_BILINEAR,
+        nullptr, nullptr, nullptr);
 
     av_image_alloc(_rgbFrameBuffer->data, _rgbFrameBuffer->linesize, _outWidth, _outHeight, AV_PIX_FMT_RGB24, 1);
 
     _startTime = std::chrono::steady_clock::now();
 }
 
-VideoDecoder::~VideoDecoder()
-{
+VideoDecoder::~VideoDecoder() {
     av_freep(&_rgbFrameBuffer->data[0]);
     av_frame_unref(_rgbFrameBuffer);
     // avcodec_close(_codecContext);
     avformat_close_input(&_formatContext);
+    avformat_free_context(_formatContext);
 }
 
-void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize)
-{
+void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize) {
     assert(bufferSize >= av_image_get_buffer_size(AV_PIX_FMT_RGB24, 256, 64, 1));
 
     AVFrame *frame = av_frame_alloc();
@@ -87,17 +85,13 @@ void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize)
             if (ret < 0) {
                 if (ret == AVERROR(EAGAIN)) {
                     std::cerr << "Previous packet not finished" << std::endl;
-                }
-                else if (ret == AVERROR_EOF) {
+                } else if (ret == AVERROR_EOF) {
                     std::cerr << "Packet at EOF" << std::endl;
-                }
-                else if (ret == AVERROR(EINVAL)) {
+                } else if (ret == AVERROR(EINVAL)) {
                     std::cerr << "Massive fail when sending packet" << std::endl;
-                }
-                else if (ret == AVERROR(ENOMEM)) {
+                } else if (ret == AVERROR(ENOMEM)) {
                     std::cerr << "Ran out of memory" << std::endl;
-                }
-                else {
+                } else {
                     std::cerr << "Unknown packet error (" << ret << ")" << std::endl;
                 }
                 std::exit(-1);
@@ -108,18 +102,17 @@ void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize)
                     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                         std::cerr << "Empty packet?" << std::endl;
                         break;
-                    }
-                    else if (ret == AVERROR(EINVAL)) {
+                    } else if (ret == AVERROR(EINVAL)) {
                         std::cerr << "Massive fail when decoding this frame" << std::endl;
-                    }
-                    else if (ret < 0) {
+                    } else if (ret < 0) {
                         std::cerr << "Unknown frame error (" << ret << ")" << std::endl;
                     }
                     std::exit(-1);
                 }
                 /*
                   std::cout << "frame pts: " << frame->pts << std::endl;
-                  std::cout << "      best effort: " << frame->best_effort_timestamp << std::endl;
+                  std::cout << "      best effort: " <<
+                  frame->best_effort_timestamp << std::endl;
                  */
 
                 // wait until the right moment
@@ -127,8 +120,10 @@ void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize)
                 auto nextFrameTime = frame->best_effort_timestamp * av_q2d(_videoStream->time_base) * 1000.;
                 std::this_thread::sleep_until(_startTime + std::chrono::milliseconds(static_cast<int>(nextFrameTime)));
 
-                // TODO: should be able to play h264 back without converting to rgb since we only need luminance
-                sws_scale(_swsContext, frame->data, frame->linesize, 0, _codecContext->height, _rgbFrameBuffer->data, _rgbFrameBuffer->linesize);
+                // TODO: should be able to play h264 back without converting to
+                // rgb since we only need luminance
+                sws_scale(_swsContext, frame->data, frame->linesize, 0, _codecContext->height, _rgbFrameBuffer->data,
+                    _rgbFrameBuffer->linesize);
                 memcpy(outBuffer, _rgbFrameBuffer->data[0], bufferSize);
                 av_frame_unref(frame);
                 av_packet_unref(&packet);
@@ -139,8 +134,7 @@ void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize)
     }
 }
 
-void VideoDecoder::Replay()
-{
+void VideoDecoder::Replay() {
     av_seek_frame(_formatContext, _streamIndex, 0, AVSEEK_FLAG_BACKWARD);
     avcodec_flush_buffers(_codecContext);
     _startTime = std::chrono::steady_clock::now();

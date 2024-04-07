@@ -29,6 +29,8 @@ set(SOURCE_FILES
         source/wrappers/hardware.hpp
         source/main.cpp
         source/video/decoder.hpp
+        source/video/helper.hpp
+        source/video/helper.cpp
         source/video/videoDecoder.cpp
         source/video/videoDecoder.hpp
         source/wrappers/sh1106.cpp

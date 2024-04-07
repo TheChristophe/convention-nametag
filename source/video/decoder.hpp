@@ -5,12 +5,12 @@
 #include <cstdint>
 
 class Decoder {
-    public:
+  public:
     virtual ~Decoder() = default;
 
     virtual void DecodeFrame(uint8_t *buffer, int bufferSize) = 0;
 
-    private:
+  private:
 };
 
 #endif

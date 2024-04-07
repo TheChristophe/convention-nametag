@@ -16,13 +16,13 @@ extern "C" {
 #include <string>
 
 class VideoDecoder : public Decoder {
-    public:
+  public:
     explicit VideoDecoder(const std::filesystem::path &file, int width, int height);
     ~VideoDecoder() override;
 
     void DecodeFrame(uint8_t *outBuffer, int bufferSize) override;
 
-    private:
+  private:
     void Replay();
 
     AVFormatContext *_formatContext{};
@@ -32,7 +32,7 @@ class VideoDecoder : public Decoder {
     struct SwsContext *_swsContext;
     AVStream *_videoStream;
 
-    AVFrame *_rgbFrameBuffer{ av_frame_alloc() };
+    AVFrame *_rgbFrameBuffer{av_frame_alloc()};
 
     const int _outWidth;
     const int _outHeight;

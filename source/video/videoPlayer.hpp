@@ -9,15 +9,15 @@
 #include <mutex>
 
 class VideoPlayer {
-    public:
+  public:
     VideoPlayer(int width, int height);
     ~VideoPlayer() = default;
 
     void FetchFrame(uint8_t *buffer, int bufferSize);
     bool PlayFile(const std::filesystem::path &file);
 
-    private:
-    std::unique_ptr<Decoder> _activeDecoder{ std::make_unique<IdleDecoder>() };
+  private:
+    std::unique_ptr<Decoder> _activeDecoder{std::make_unique<IdleDecoder>()};
 
     int _width;
     int _height;
