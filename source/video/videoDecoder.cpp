@@ -50,11 +50,12 @@ VideoDecoder::VideoDecoder(const std::filesystem::path &file, int width, int hei
 
     avformat_find_stream_info(_formatContext, nullptr);
 
+    // AV_PIX_FMT_GRAY8 = Y component of YUV
     _swsContext = sws_getContext(_codecParameters->width, _codecParameters->height,
-        static_cast<AVPixelFormat>(_codecParameters->format), _outWidth, _outHeight, AV_PIX_FMT_RGB24, SWS_BILINEAR,
+        static_cast<AVPixelFormat>(_codecParameters->format), _outWidth, _outHeight, AV_PIX_FMT_GRAY8, SWS_BILINEAR,
         nullptr, nullptr, nullptr);
 
-    av_image_alloc(_rgbFrameBuffer->data, _rgbFrameBuffer->linesize, _outWidth, _outHeight, AV_PIX_FMT_RGB24, 1);
+    av_image_alloc(_rgbFrameBuffer->data, _rgbFrameBuffer->linesize, _outWidth, _outHeight, AV_PIX_FMT_GRAY8, 1);
 
     _startTime = std::chrono::steady_clock::now();
 }
@@ -68,7 +69,7 @@ VideoDecoder::~VideoDecoder() {
 }
 
 void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize) {
-    assert(bufferSize >= av_image_get_buffer_size(AV_PIX_FMT_RGB24, 256, 64, 1));
+    assert(bufferSize >= av_image_get_buffer_size(AV_PIX_FMT_GRAY8, 256, 64, 1));
 
     AVFrame *frame = av_frame_alloc();
     AVPacket packet;
@@ -120,11 +121,14 @@ void VideoDecoder::DecodeFrame(uint8_t *outBuffer, int bufferSize) {
                 auto nextFrameTime = frame->best_effort_timestamp * av_q2d(_videoStream->time_base) * 1000.;
                 std::this_thread::sleep_until(_startTime + std::chrono::milliseconds(static_cast<int>(nextFrameTime)));
 
-                // TODO: should be able to play h264 back without converting to
-                // rgb since we only need luminance
                 sws_scale(_swsContext, frame->data, frame->linesize, 0, _codecContext->height, _rgbFrameBuffer->data,
                     _rgbFrameBuffer->linesize);
-                memcpy(outBuffer, _rgbFrameBuffer->data[0], bufferSize);
+
+                for (int s = 0; s < 3; s++) {
+                    for (int i = 0; i < bufferSize / 3; i++) {
+                        outBuffer[i * 3 + s] = _rgbFrameBuffer->data[0][s * bufferSize / 3 + i];
+                    }
+                }
                 av_frame_unref(frame);
                 av_packet_unref(&packet);
 

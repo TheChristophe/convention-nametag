@@ -109,9 +109,8 @@ void getVideos(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
     std::vector<nlohmann::json> fileNames;
     std::transform(
         files.begin(), files.end(), std::back_inserter(fileNames), [](const fs::path &path) -> nlohmann::json {
-            nlohmann::json entry{{"filename", std::string(path.filename())},
-                // TODO: return more elegantly
-                {"thumbnail", thumbnailFilename(path.filename())}};
+            nlohmann::json entry{
+                {"filename", std::string(path.filename())}, {"thumbnail", thumbnailFilename(path.filename())}};
             if (const auto duration = getVideoDuration(path); duration.has_value()) {
                 entry["duration"] = duration.value();
             }
