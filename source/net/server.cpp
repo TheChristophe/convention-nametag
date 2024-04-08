@@ -5,9 +5,11 @@
 
 #include "video/helper.hpp"
 
+namespace fs = std::filesystem;
+
 // files delivered expected to be small, so skipping async data delivery for simplicity
-std::optional<std::string> AttemptLoadFile(const std::filesystem::path &file) {
-    if (not std::filesystem::exists(file)) {
+std::optional<std::string> AttemptLoadFile(const fs::path &file) {
+    if (not fs::exists(file)) {
         return std::nullopt;
     }
     std::ifstream t(file);
@@ -39,6 +41,7 @@ std::string UrlDecode(std::string encoded) {
 namespace ResponseCodes {
 const auto HTTP_200_OK = uWS::HTTP_200_OK;
 const auto HTTP_204_NO_CONTENT = "204 No Content";
+const auto HTTP_400_BAD_REQUEST = "400 Bad Request";
 const auto HTTP_404_NOT_FOUND = "404 Not Found";
 const auto HTTP_409_CONFLICT = "409 Conflict";
 } // namespace ResponseCodes
@@ -49,17 +52,13 @@ const auto RESPONSE_404 = "<!doctype html>\n"
                           "  <body>Not found</body>\n"
                           "</html>";
 
-const auto videoFolder = std::filesystem::path("videos");
+const auto videoFolder = fs::path("videos");
 
-template <bool SSL = false> void serveFile(uWS::HttpResponse<SSL> *res, uWS::HttpRequest *req) {
-    // cut off / or c++ will interpret it as root path
-    std::string url = std::string(req->getUrl()).substr(1);
-    // if accessing "/"
-    if (url.empty()) {
-        url = "index.html";
-    }
-    url = std::filesystem::current_path().parent_path() / "frontend/build" / url;
-    auto file = AttemptLoadFile(url);
+template <bool SSL = false> void serveFile(uWS::HttpResponse<SSL> *res, const fs::path &path) {
+    // uWS::HttpRequest *req,
+    // const fs::path &fileBasePath = fs::current_path().parent_path() / "frontend/build") {
+
+    auto file = AttemptLoadFile(path);
     if (not file.has_value()) {
         res->writeStatus(ResponseCodes::HTTP_404_NOT_FOUND);
         res->writeHeader("Access-Control-Allow-Origin", "*");
@@ -71,28 +70,48 @@ template <bool SSL = false> void serveFile(uWS::HttpResponse<SSL> *res, uWS::Htt
     }
 }
 
-std::vector<std::filesystem::path> listFiles() {
-    if (std::filesystem::exists(videoFolder) && std::filesystem::is_directory(videoFolder)) {
-        std::vector<std::filesystem::path> files;
-        auto iterator = std::filesystem::directory_iterator(videoFolder);
-        std::copy(std::filesystem::begin(iterator), std::filesystem::end(iterator), std::back_inserter(files));
+std::vector<fs::path> listFiles() {
+    if (fs::exists(videoFolder) && fs::is_directory(videoFolder)) {
+        std::vector<fs::path> files;
+        auto iterator = fs::directory_iterator(videoFolder);
+        std::copy_if(fs::begin(iterator), fs::end(iterator), std::back_inserter(files),
+            [](auto it) { return !fs::is_directory(it); });
         return files;
     }
     return {};
 }
 
-void getRoot(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) { serveFile(res, req); }
+const auto frontendRoot = fs::current_path().parent_path() / "frontend/build";
 
-void getRootFile(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) { serveFile(res, req); }
+void getRoot(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) { serveFile(res, frontendRoot / "index.html"); }
+
+void getFile(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
+    // cut off '/' or c++ will interpret it as root path
+    const auto requestUrl = req->getUrl();
+    std::string url = requestUrl[0] == '/' ? std::string(requestUrl).substr(1) : std::string(requestUrl);
+
+    // if accessing "/"
+    if (url.empty()) {
+        url = "index.html";
+    }
+
+    url = frontendRoot / url;
+    serveFile(res, url);
+}
+
+std::string thumbnailFilename(const std::string &filename) { return std::format("{}.thumb.webp", filename); }
+std::string thumbnailPath(const std::string &filename) {
+    return std::format("videos/thumbnails/{}", thumbnailFilename(filename));
+}
 
 void getVideos(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
     auto files = listFiles();
     std::vector<nlohmann::json> fileNames;
-    std::transform(files.begin(), files.end(), std::back_inserter(fileNames),
-        [](const std::filesystem::path &path) -> nlohmann::json {
-            nlohmann::json entry{
-                {"filename", std::string(path.filename())},
-            };
+    std::transform(
+        files.begin(), files.end(), std::back_inserter(fileNames), [](const fs::path &path) -> nlohmann::json {
+            nlohmann::json entry{{"filename", std::string(path.filename())},
+                // TODO: return more elegantly
+                {"thumbnail", thumbnailFilename(path.filename())}};
             if (const auto duration = getVideoDuration(path); duration.has_value()) {
                 entry["duration"] = duration.value();
             }
@@ -108,51 +127,58 @@ void getVideos(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
 
 void postVideo(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
     auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
-    auto path = videoFolder / std::filesystem::path(urlDecoded).filename();
+    auto *path = new fs::path(videoFolder / fs::path(urlDecoded).filename());
 
-    if (!std::filesystem::exists(videoFolder)) {
-        std::filesystem::create_directory(videoFolder);
+    if (!fs::exists(videoFolder)) {
+        fs::create_directory(videoFolder);
+    }
+    if (!fs::exists(videoFolder / "thumbnails")) {
+        fs::create_directory(videoFolder / "thumbnails");
     }
 
-    // use C files because idk how to do binary with ofstream
-    if (exists(path)) {
-        std::cerr << "File collision, upload for " << path << " refused" << std::endl;
+    if (exists(*path)) {
         res->writeStatus(ResponseCodes::HTTP_409_CONFLICT);
         res->writeHeader("Access-Control-Allow-Origin", "*");
         res->end();
         return;
     }
 
-    FILE *out = fopen(path.c_str(), "wb");
+    FILE *out = fopen(path->c_str(), "wb");
 
-    res->onData([&out, &res](std::string_view chunk, auto isLast) {
-        /* Buffer this anywhere you want to */
+    res->onData([res, out, path](std::string_view chunk, bool isLast) {
         fwrite(chunk.data(), chunk.size(), 1, out);
 
         if (isLast) {
             fclose(out);
+
+            std::system(std::format(
+                "ffmpeg -i {} -filter:v thumbnail=500 -frames:v 1 {}", path->c_str(), thumbnailPath(path->filename()))
+                            .c_str());
+
+            delete path;
+
             res->writeStatus(ResponseCodes::HTTP_204_NO_CONTENT);
             res->writeHeader("Access-Control-Allow-Origin", "*");
             res->end();
         }
     });
 
-    res->onAborted([&out, &path, &res]() {
-        /* Request was prematurely aborted, stop reading */
+    res->onAborted([res, out, path]() {
         fclose(out);
-        remove(path.c_str());
-        std::cerr << "Upload for " << path << " aborted" << std::endl;
-        res->writeStatus(ResponseCodes::HTTP_409_CONFLICT);
+        remove(*path);
+        delete path;
+
+        res->writeStatus(ResponseCodes::HTTP_400_BAD_REQUEST);
         res->writeHeader("Access-Control-Allow-Origin", "*");
         res->end();
-        return;
     });
 }
 
 void deleteVideo(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
     auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
-    auto path = videoFolder / std::filesystem::path(urlDecoded).filename();
-    std::filesystem::remove(path);
+    auto path = videoFolder / fs::path(urlDecoded).filename();
+    fs::remove(videoFolder / fs::path(urlDecoded).filename());
+    fs::remove(thumbnailPath(fs::path(urlDecoded).filename()));
 
     res->writeStatus(ResponseCodes::HTTP_204_NO_CONTENT);
     res->writeHeader("Access-Control-Allow-Origin", "*");
@@ -161,7 +187,7 @@ void deleteVideo(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
 
 void postPlayFile(uWS::HttpResponse<false> *res, uWS::HttpRequest *req, VideoPlayer &player) {
     auto urlDecoded = UrlDecode(std::string(req->getParameter(0)));
-    auto path = videoFolder / std::filesystem::path(urlDecoded).filename();
+    auto path = videoFolder / fs::path(urlDecoded).filename();
     if (not player.PlayFile(path)) {
         std::cerr << "Could not find file " << path << std::endl;
         res->writeStatus(ResponseCodes::HTTP_404_NOT_FOUND);
@@ -176,6 +202,13 @@ void postPlayFile(uWS::HttpResponse<false> *res, uWS::HttpRequest *req, VideoPla
     res->end();
 }
 
+const auto thumbnailRoot = fs::current_path() / "videos/thumbnails";
+
+void getThumbnail(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
+    std::cout << "th " << thumbnailRoot / UrlDecode(std::string(req->getParameter(0))) << std::endl;
+    serveFile(res, thumbnailRoot / UrlDecode(std::string(req->getParameter(0))));
+}
+
 void options(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
     res->writeStatus(ResponseCodes::HTTP_204_NO_CONTENT);
     res->writeHeader("Access-Control-Allow-Origin", "*");
@@ -187,13 +220,14 @@ void options(uWS::HttpResponse<false> *res, uWS::HttpRequest *req) {
 void WebServer::run(VideoPlayer &player) {
     uWS::App()
         .get("/", getRoot)
-        .get("/*", getRootFile)
+        .get("/*", getFile)
         .get("/videos", getVideos)
         .post("/videos/:video", postVideo)
         .del("/videos/:file", deleteVideo)
         // play specific video
         .post("/videos/:file/play",
             [&player](uWS::HttpResponse<false> *res, uWS::HttpRequest *req) { postPlayFile(res, req, player); })
+        .get("/thumbnails/:thumbnail", getThumbnail)
         .options("/*", options)
         .listen(_port,
             [this](auto *token) {
